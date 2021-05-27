@@ -1,0 +1,9 @@
+{
+  "Id": "Allows weapons to fire drones",
+  "DisplayName": "Drone Mod",
+  "Author": "FLSoz",
+  "Version": "0.1.0",
+  "Enable": true,
+  "AssemblyName": "DroneMod.dll",
+  "EntryMethod": "DroneMod.src.IngressPoint.Main"
+}
