@@ -432,7 +432,7 @@ namespace DroneMod.src
                     this.m_LaunchTimeout -= Time.deltaTime;
                 }
 
-                if (!this.hangar || (this.Shooter.transform.position - this.transform.position).magnitude > this.hangar.m_MaxRange)
+                if (!this.hangar)
                 {
                     this.DeregisterDrone();
                     this.OnLifetimeEnd();

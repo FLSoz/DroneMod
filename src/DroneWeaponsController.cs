@@ -12,6 +12,10 @@ namespace DroneMod.src
 	// An equivalent of DroneWeaponsControllers capabilities
 	public class DroneWeaponsController : DroneModule
 	{
+		[SerializeField]
+		[HideInInspector]
+		public DroneWeapon m_MainArmament;
+
 		public void Launch(ModuleHangar hangar)
 		{
 			for (int i = 0; i < this.m_WeaponComponents.Length; i++)
@@ -26,6 +30,20 @@ namespace DroneMod.src
 		{
 			this.m_WeaponComponents = base.GetComponentsInChildren<DroneWeapon>();
 			d.Assert(this.m_WeaponComponents != null, "DroneWeaponsController needs an DroneWeapon.");
+
+			this.m_MainArmament = null;
+			foreach (DroneWeapon weapon in this.m_WeaponComponents)
+            {
+				if (weapon.m_IsMainArmament)
+                {
+					this.m_MainArmament = weapon;
+					break;
+                }
+            }
+			if (this.m_MainArmament == null)
+            {
+				this.m_MainArmament = this.m_WeaponComponents[0];
+			}
 		}
 
 		private void OnSpawn()

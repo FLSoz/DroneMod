@@ -25,6 +25,9 @@ namespace DroneMod.src.DroneModules
 		public event Action<TechAudio.AudioTickData, FMODEvent.FMODParams> OnAudioTickUpdate;
 		#endregion
 
+		[SerializeField]
+		public bool m_IsMainArmament = false;
+
 		#region ModuleWeapon equivalent
 		[SerializeField]
 		public float m_ChangeTargetInterval = 1.0f;
@@ -57,7 +60,7 @@ namespace DroneMod.src.DroneModules
 		public TechAudio.SFXType m_FireSFXType = TechAudio.SFXType.CoilLaserSmall;
 
 		[SerializeField]
-		private IModuleWeapon m_WeaponComponent;
+		public IModuleWeapon m_WeaponComponent;
 		#endregion
 
 		[SerializeField]

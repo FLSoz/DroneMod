@@ -67,11 +67,17 @@ namespace DroneMod.src
         private int movementLayer = 0;
         private int movementLayers = 1;
         private float MaxDriftDist = 10.0f;
+        private bool movingAway = false;
         #endregion
+
+        [SerializeField]
+        [HideInInspector]
+        private DroneWeaponsController weaponsController;
 
         public Rigidbody rbody { get; private set; }
 
         private bool debug = true;
+
         private void DebugPrint(string message)
         {
             if (this.debug)
@@ -299,12 +305,14 @@ namespace DroneMod.src
                 // DebugPrint("[DM] - Turn out");
                 // sharp turn out
                 targetPosition = (-targetVector.normalized * Time.fixedDeltaTime * speed) + this.transform.position;
+                this.movingAway = true;
             }
             else if (distance > this.turnInRadius)
             {
                 // DebugPrint("[DM] - Turn In");
                 // sharp turn in
                 targetPosition = (targetVector.normalized * Time.fixedDeltaTime * speed) + this.transform.position;
+                this.movingAway = false;
             }
             else
             {
@@ -479,7 +487,150 @@ namespace DroneMod.src
         // Intercept an enemy
         private void Intercept(Visible enemy)
         {
+            IModuleWeapon mainWeapon = this.weaponsController.m_MainArmament.m_WeaponComponent;
+            float velocity = mainWeapon.GetVelocity();
+            bool useGravity = mainWeapon.AimWithTrajectory();
 
+            DebugPrint($"[DM] Intercept {enemy.name} AT {enemy.transform.position}, We are at {this.transform.position}. Velocity {velocity}, Gravity {useGravity}");
+            Vector3 targetCenterPosition = enemy.transform.position;
+            float targetRadius = 0.0f;
+            if (enemy.tank)
+            {
+                Bounds bounds = enemy.tank.blockBounds;
+                targetCenterPosition += bounds.center;
+                targetRadius = bounds.extents.magnitude;
+            }
+            targetCenterPosition += this.targetOffset;
+
+            Vector3 targetVector = targetCenterPosition - this.transform.position;
+
+            float distance = targetVector.magnitude - targetRadius;
+            // targetVector.y = 0.0f;
+            float speed = this.rbody.velocity.magnitude;
+            // DebugPrint($"[DM] Target is at {targetCenterPosition}, we are {distance} distance");
+
+            // Determine wanted direction
+            Vector3 targetPosition;
+            if (distance < this.turnOutRadius || (this.movingAway && distance < this.turnInRadius))
+            {
+                // DebugPrint("[DM] - Turn out");
+                // sharp turn out
+                targetPosition = (-targetVector.normalized * Time.fixedDeltaTime * speed) + this.transform.position;
+                this.movingAway = true;
+            }
+            else if (distance > this.turnInRadius)
+            {
+                // DebugPrint("[DM] - Turn In");
+                // sharp turn in
+                targetPosition = (targetVector.normalized * Time.fixedDeltaTime * speed) + this.transform.position;
+                if (this.drone.m_ExplodeOnTerrain)
+                {
+                    float targetLeewayHeight = 0.0f;
+                    if (!Singleton.Manager<ManWorld>.inst.GetTerrainHeight(targetPosition, out targetLeewayHeight))
+                    {
+                        DebugPrint("Getting terrain height failed");
+                    }
+                    targetLeewayHeight += this.targetHeight * 2;
+
+                    targetPosition.y = Mathf.Max(targetPosition.y, targetLeewayHeight);
+                }
+                this.movingAway = false;
+            }
+            else
+            {
+                // 
+                if (velocity > 0.0f)
+                {
+                    Vector3 relativeVelocity = enemy.rbody.velocity - this.rbody.velocity;
+                    Vector3 relativeAcceleration = enemy.tank.acceleration;
+                    if (useGravity)
+                    {
+                        relativeAcceleration -= Physics.gravity;
+                    }
+
+                    float exactTime = BallisticEquations.SolveBallisticArc(this.transform.position, velocity, targetCenterPosition, relativeVelocity, relativeAcceleration);
+                    targetPosition = targetCenterPosition + (relativeVelocity * ((targetCenterPosition - this.transform.position).magnitude / velocity));
+                    if (exactTime != Mathf.Infinity)
+                    {
+                        targetPosition = targetCenterPosition + (relativeVelocity * exactTime) + ((relativeAcceleration + (useGravity ? Physics.gravity : Vector3.zero)) / 2 * exactTime * exactTime);
+                    }
+                }
+                else
+                {
+                    // direct at enemy
+                    targetPosition = targetCenterPosition;
+                }
+            }
+
+            float offset = this.movementLayer * this.approximateRadius * 2;
+            float tentativeHeight = targetPosition.y;
+            float minPossibleHeight = this.targetOffset.y > 0 ? targetPosition.y : Mathf.NegativeInfinity;
+            float maxPossibleHeight = this.targetOffset.y < 0 ? targetPosition.y : Mathf.Infinity;
+
+            bool avoidance = false;
+            // Collision avoidance
+
+            // Terrain avoidance
+            float height;
+            if (this.drone.m_ExplodeOnTerrain)
+            {
+                if (!Singleton.Manager<ManWorld>.inst.GetTerrainHeight(targetPosition, out height))
+                {
+                    DebugPrint("Getting terrain height failed");
+                    height = 0.0f;
+                }
+                height += this.targetHeight;
+
+                if (tentativeHeight < height)
+                {
+                    // adjust to go up extra sharp if below tolerance
+                    tentativeHeight = height + this.targetHeight;
+                    avoidance = true;
+                }
+                minPossibleHeight = height;
+
+                avoidance = height - this.transform.position.y >= this.MaxDriftDist;
+            }
+
+            // randomize movement layer on height
+            if (avoidance)
+            {
+                targetPosition.y = tentativeHeight + (this.movementLayer * 2 * this.approximateRadius);
+                this.movingAway = true;
+            }
+            Vector3 targetDirection = targetPosition - this.transform.position;
+
+            // don't use vertical clamp because we're not targeting heights
+            /* if (!avoidance)
+            {
+                float groundDistance = Mathf.Sqrt(targetDirection.x * targetDirection.x + targetDirection.z * targetDirection.z);
+
+                // x angle is height
+                float xAngle = Mathf.Abs(Mathf.Atan2(this.transform.forward.y, this.transform.forward.SetY(0).magnitude) * Mathf.Rad2Deg);
+                // y angle is yaw
+                // float yAngle = Vector3.SignedAngle(targetDirection, this.transform.forward, Vector3.up);
+                // z angle is roll - ignore
+                float clampAngle = this.GetTargetHeightAngle(tentativeHeight);
+
+                // want to eventually finish and level out 
+                float newY = Mathf.Abs(Mathf.Tan(Mathf.Min(xAngle, clampAngle) * Mathf.Deg2Rad)) * groundDistance * Mathf.Sign(targetDirection.y);
+                DebugPrint($"[DM]   - We have a vertical angle of {xAngle}, clamped by {clampAngle} for relative height {Mathf.Abs(tentativeHeight - this.transform.position.y)}");
+                targetDirection.y = newY;
+            } */
+
+            DebugPrint($"[DM]   - We are targeting {targetDirection}");
+            this.TurnTowards(targetDirection);
+            float currSpeed = this.rbody.velocity.magnitude;
+            if (this.alwaysMove)
+            {
+                // always max speed
+                this.rbody.velocity = this.rbody.velocity.normalized * Mathf.MoveTowards(currSpeed, this.maxSpeed, this.acceleration);
+            }
+            else
+            {
+                // slow down
+                this.rbody.velocity = this.rbody.velocity.normalized * Mathf.MoveTowards(currSpeed, 0, this.acceleration);
+            }
         }
 
         // Escort a friendly - assumes no always move - so do formation
@@ -491,8 +642,29 @@ namespace DroneMod.src
         public void Control(Visible target, bool isEnemy)
         {
             Vector3 targetPosition = target.transform.position;
-            if (!isEnemy)
+            bool returnToCarrier = (targetPosition - this.transform.position).magnitude > this.drone.hangar.m_MaxRange;
+            if (!returnToCarrier)
             {
+                if (this.drone.m_ExplodeOnTerrain)
+                {
+                    float targetLeewayHeight = 0.0f;
+                    if (!Singleton.Manager<ManWorld>.inst.GetTerrainHeight(targetPosition, out targetLeewayHeight))
+                    {
+                        DebugPrint("Getting terrain height failed");
+                    }
+                    targetLeewayHeight += this.targetHeight * 2;
+
+                    returnToCarrier = targetPosition.y < targetLeewayHeight + this.MaxDriftDist;
+                }
+            }
+            if (!isEnemy || returnToCarrier)
+            {
+                this.movingAway = false;
+                if (returnToCarrier)
+                {
+                    target = this.drone.hangar.block.tank.visible;
+                    isEnemy = false;
+                }
                 if (this.alwaysMove)
                 {
                     this.Circle(target, isEnemy);
@@ -533,6 +705,7 @@ namespace DroneMod.src
 
         private void PrePool()
         {
+            this.weaponsController = base.GetComponent<DroneWeaponsController>();
         }
 
         private void OnSpawn()
@@ -543,7 +716,7 @@ namespace DroneMod.src
                 this.rbody = this.gameObject.AddComponent<Rigidbody>();
             }
 
-            float allocatableTurnSpeed = this.turnSpeed * Time.fixedDeltaTime / 2;
+            float allocatableTurnSpeed = this.turnSpeed * Time.fixedDeltaTime;
             float dist = 0.0f;
             int maxJoints = Mathf.CeilToInt(90.0f / allocatableTurnSpeed);
             for (int i = 0; i < maxJoints; i++)
@@ -562,6 +735,8 @@ namespace DroneMod.src
             // this.MaxDriftDist = this.maxSpeed / (allocatableTurnSpeed * allocatableTurnSpeed);
             this.MaxDriftDist = Mathf.Max(20.0f, dist);
             DebugPrint($"[DM] MAX DRIFT DIST = {this.MaxDriftDist}");
+
+            this.movingAway = false;
         }
     }
 }

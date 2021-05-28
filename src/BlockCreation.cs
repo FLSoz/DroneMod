@@ -520,11 +520,12 @@ namespace DroneMod.src
             // Setup weapon bits
             FireData new_FireData = laser.AddComponent<FireData>();
             FireData old_FireData = laserPrefab.GetComponent<FireData>();
-            GameObjectJSON.ShallowCopy(typeof(FireData), new_FireData, old_FireData, true);
+            GameObjectJSON.ShallowCopy(typeof(FireData), old_FireData, new_FireData, true);
+            new_FireData.m_MuzzleVelocity = 0.0f;
 
             TargetAimer new_TargetAimer = laser.AddComponent<TargetAimer>();
             TargetAimer old_TargetAimer = laserPrefab.GetComponent<TargetAimer>();
-            GameObjectJSON.ShallowCopy(typeof(TargetAimer), new_TargetAimer, old_TargetAimer, true);
+            GameObjectJSON.ShallowCopy(typeof(TargetAimer), old_TargetAimer, new_TargetAimer, true);
 
             DroneWeapon droneWeapon = laser.AddComponent<DroneWeapon>();
             DroneWeaponGun droneWeaponGun = laser.AddComponent<DroneWeaponGun>();
@@ -554,21 +555,23 @@ namespace DroneMod.src
             
             laserBarrel.m_FadeOutTime = 0.2f;
             laserBarrel.m_ToFadeOut = false;
-            laserBarrel.m_Range = 150.0f;
+            laserBarrel.m_Range = 100.0f;
             laserBarrel.m_DamagePerSecond = 40;
 
             // Change aiming
             GimbalAimer[] gimbalAimers = gimbalBase.GetComponentsInChildren<GimbalAimer>();
             foreach (GimbalAimer gimbalAimer in gimbalAimers)
             {
-                if (gimbalAimer.rotationAxis == GimbalAimer.AxisConstraint.X)
+                /* if (gimbalAimer.rotationAxis == GimbalAimer.AxisConstraint.X)
                 {
                     gimbalAimer.rotationLimits = new float[2] { -20, 90 }; // -90, 20
                 }
                 else if (gimbalAimer.rotationAxis == GimbalAimer.AxisConstraint.Y)
                 {
                     gimbalAimer.rotationLimits = new float[2] { 0, 0 };
-                }
+                } */
+                // UnityEngine.Object.Destroy(gimbalAimer);
+                gimbalAimer.rotationLimits = new float[2] { -2, 2 };
             }
 
             UnityEngine.Object.Destroy(laserPrefab);
@@ -622,12 +625,14 @@ namespace DroneMod.src
             controllerParameters.maxSpeed = 80;
             controllerParameters.acceleration = 15.0f;
             controllerParameters.targetHeight = 20.0f;
+            controllerParameters.movementMode = MovementMode.Intercept;
 
             DroneParameters droneParameters = DroneParameters.Default();
             droneParameters.droneName = "Drone";
             droneParameters.m_ExplodeAfterLifetime = true;
             droneParameters.m_LifeTime = 0.0f;
             droneParameters.m_LaunchTime = 0.1f;
+            droneParameters.maxHealth = 10.0f;
 
             DroneModelParameters modelParameters = new DroneModelParameters(mat, Properties.Resources.Drone, Vector3.one / 4);
 
@@ -638,7 +643,7 @@ namespace DroneMod.src
             hangarParameters.fireTransform.localPosition = new Vector3(0, 0, 2);
             hangarParameters.m_MaxDrones = 10;
             hangarParameters.m_ShotCooldown = 0.5f;
-            hangarParameters.m_MaxRange = 1000.0f;
+            hangarParameters.m_MaxRange = 300.0f;
             hangarParameters.m_LaunchVelocity = 200.0f;
 
             SetupHangar(launcherPrefab, drone, hangarParameters);
